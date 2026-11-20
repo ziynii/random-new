@@ -2861,7 +2861,6 @@ const themes=[theme0,theme1,theme2,theme4,theme5,theme7,theme8,theme9,themeBunge
 })();
 </textarea></section><footer>made with <span>♥</span> for your cozy chat · 14 selectable themes · v19</footer></main><script>
 const template=document.getElementById('userscript-template').value;
-const NEEDLE='const picked=Math.floor(Math.random()*themes.length);';
 const checks=Array.from(document.querySelectorAll('.theme-check'));
 const selectedCount=document.getElementById('selected-count');
 const generateBtn=document.getElementById('generate-userscript');
@@ -2870,15 +2869,142 @@ const resultThemes=document.getElementById('result-themes');
 const generatedCode=document.getElementById('generated-code');
 const status=document.getElementById('status');
 const previewWrap=document.getElementById('code-preview-wrap');
-const STORAGE_KEY='zeta-custom-random-theme-selection-v3';
+const STORAGE_KEY='zeta-custom-random-theme-selection-v4';
 const themeNames=['토끼','눈사람','다람쥐','크리스마스','검정고양이','푸딩·메론소다','멜론빵 거북이','파스텔 우주','붕어빵 강아지','비눗방울 햄스터','치즈 생쥐','네잎클로버 토끼','식빵 고양이','버섯집 토끼'];
+const themeFunctionNames=['theme0','theme1','theme2','theme4','theme5','theme7','theme8','theme9','themeBungeo','themeBubble','themeCheese','themeClover','themeToastCat','themeMushroom'];
 let generatedFor='';
-function selectedIndices(){return checks.filter(c=>c.checked).map(c=>Number(c.dataset.themeIndex)).sort((a,b)=>a-b)}
+let generatedThemeCount=0;
+let templatePartsCache=null;
+
+function selectedIndices(){
+  return checks.filter(c=>c.checked).map(c=>Number(c.dataset.themeIndex)).sort((a,b)=>a-b)
+}
 function selectionKey(){return selectedIndices().join(',')}
-function invalidateResult(){generatedFor='';generatedCode.value='';resultBox.classList.remove('show');previewWrap.classList.remove('show')}
-function refreshSelection(){const selected=selectedIndices();selectedCount.textContent=`${selected.length}개 선택됨`;generateBtn.disabled=!selected.length;invalidateResult();status.textContent=selected.length?'선택 완료! 이제 랜덤 유저스크립트를 만들어 주세요.':'테마를 하나 이상 선택해 주세요.';try{localStorage.setItem(STORAGE_KEY,JSON.stringify(selected))}catch(e){}}
-function buildUserscript(){const selected=selectedIndices();if(!selected.length)return;const replacement=`const enabled=${JSON.stringify(selected)};\n  const picked=enabled[Math.floor(Math.random()*enabled.length)];`;const names=selected.map(i=>themeNames[i]);let code=template.replace(NEEDLE,replacement);code=code.replace(/(\/\/ @description\s+)[^\r\n]*/,(_,prefix)=>prefix+names.join(' / ')+' 중 랜덤 적용 · 새 Zeta iframe 대응');generatedCode.value=code;generatedFor=selectionKey();resultThemes.textContent='선택된 테마: '+names.join(' · ');resultBox.classList.add('show');previewWrap.classList.remove('show');status.textContent='완성됐어요! 아래 복사 버튼을 눌러 주세요.';resultBox.scrollIntoView({behavior:'smooth',block:'nearest'})}
-async function copyGenerated(){if(!generatedCode.value||generatedFor!==selectionKey()){status.textContent='선택이 바뀌었어요. 다시 유저스크립트를 만들어 주세요.';invalidateResult();return}const value=generatedCode.value;try{if(!navigator.clipboard?.writeText)throw Error('clipboard unavailable');await navigator.clipboard.writeText(value);status.textContent='유저스크립트가 복사됐어요 ♡'}catch(e){generatedCode.focus();generatedCode.select();let ok=false;try{ok=document.execCommand('copy')}catch(_){}status.textContent=ok?'유저스크립트가 복사됐어요 ♡':'코드를 선택해뒀어요. 직접 복사해 주세요.';previewWrap.classList.add('show')}}
-checks.forEach(c=>c.addEventListener('change',refreshSelection));document.getElementById('select-all').addEventListener('click',()=>{checks.forEach(c=>c.checked=true);refreshSelection()});document.getElementById('clear-all').addEventListener('click',()=>{checks.forEach(c=>c.checked=false);refreshSelection()});generateBtn.addEventListener('click',buildUserscript);document.getElementById('copy-generated').addEventListener('click',copyGenerated);document.getElementById('toggle-code').addEventListener('click',()=>previewWrap.classList.toggle('show'));
-try{const saved=JSON.parse(localStorage.getItem(STORAGE_KEY));if(Array.isArray(saved)&&saved.every(v=>Number.isInteger(v)&&v>=0&&v<14)){checks.forEach(c=>c.checked=saved.includes(Number(c.dataset.themeIndex)))}else{checks.forEach(c=>c.checked=false)}}catch(e){checks.forEach(c=>c.checked=false)}refreshSelection();
+function invalidateResult(){
+  generatedFor='';
+  generatedThemeCount=0;
+  generatedCode.value='';
+  resultBox.classList.remove('show');
+  previewWrap.classList.remove('show')
+}
+function refreshSelection(){
+  const selected=selectedIndices();
+  selectedCount.textContent=`${selected.length}개 선택됨`;
+  generateBtn.disabled=!selected.length;
+  invalidateResult();
+  status.textContent=selected.length
+    ? '선택 완료! 체크한 테마만 들어가는 가벼운 랜덤 유저스크립트를 만들 수 있어요.'
+    : '테마를 하나 이상 선택해 주세요.';
+  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(selected))}catch(e){}
+}
+function getTemplateParts(){
+  if(templatePartsCache) return templatePartsCache;
+  const starts=themeFunctionNames.map(name=>({name,start:template.indexOf(`function ${name}(`)}));
+  if(starts.some(v=>v.start<0)) throw new Error('테마 함수 위치를 찾지 못했어요.');
+  starts.sort((a,b)=>a.start-b.start);
+  const firstFunctionStart=starts[0].start;
+  const themesDeclStart=template.indexOf('const themes=[');
+  if(themesDeclStart<0) throw new Error('themes 선언을 찾지 못했어요.');
+  const applyMarker='themes[picked]();';
+  const applyIdx=template.indexOf(applyMarker, themesDeclStart);
+  if(applyIdx<0) throw new Error('themes 실행 구문을 찾지 못했어요.');
+  const afterApplyLine=template.indexOf('\n', applyIdx);
+  const suffixStart=afterApplyLine>=0 ? afterApplyLine+1 : applyIdx+applyMarker.length;
+  const indexByName=new Map(starts.map((v,i)=>[v.name,i]));
+  templatePartsCache={
+    prefix:template.slice(0, firstFunctionStart),
+    themesDeclStart,
+    suffix:template.slice(suffixStart),
+    starts,
+    indexByName,
+  };
+  return templatePartsCache;
+}
+function extractThemeFunction(fnName){
+  const parts=getTemplateParts();
+  const orderIndex=parts.indexByName.get(fnName);
+  if(orderIndex==null) throw new Error(`함수 정보를 찾지 못했어요: ${fnName}`);
+  const start=parts.starts[orderIndex].start;
+  const end=orderIndex<parts.starts.length-1 ? parts.starts[orderIndex+1].start : parts.themesDeclStart;
+  return template.slice(start,end).trim()+"\n\n";
+}
+function buildSlimUserscript(selected){
+  const parts=getTemplateParts();
+  const pickedNames=selected.map(i=>themeFunctionNames[i]);
+  const functionBlocks=pickedNames.map(extractThemeFunction).join('');
+  const themeAssignments=selected.map(i=>`  themes[${i}]=${themeFunctionNames[i]};`).join('\n');
+  const runtimeBlock=`const themes=[];\n${themeAssignments}\n  const enabled=${JSON.stringify(selected)};\n  const picked=enabled[Math.floor(Math.random()*enabled.length)];\n  zcCurrentThemeIndex=picked;\n  themes[picked]();\n`;
+  let code=parts.prefix + functionBlocks + runtimeBlock + parts.suffix;
+  const title=`Zeta 커스텀 랜덤 코지 테마 ${selected.length}종`;
+  const desc=selected.map(i=>themeNames[i]).join(' / ')+' 중 랜덤 적용 · iframe 대응';
+  code=code.replace(/(\/\/ @name\s+)[^\r\n]*/, (_,prefix)=>prefix+title);
+  code=code.replace(/(\/\/ @description\s+)[^\r\n]*/, (_,prefix)=>prefix+desc);
+  code=code.replace(/(const STORAGE_KEY='zeta-custom-random-theme-selection-)[^']+(')/, "$1runtime$2");
+  return code;
+}
+function estimateLineCount(str){return str ? str.split(/\r?\n/).length : 0}
+function formatBytes(bytes){
+  if(bytes<1024) return `${bytes} B`;
+  if(bytes<1024*1024) return `${(bytes/1024).toFixed(1)} KB`;
+  return `${(bytes/1024/1024).toFixed(2)} MB`;
+}
+function buildUserscript(){
+  const selected=selectedIndices();
+  if(!selected.length) return;
+  const names=selected.map(i=>themeNames[i]);
+  try{
+    const code=buildSlimUserscript(selected);
+    generatedCode.value=code;
+    generatedFor=selectionKey();
+    generatedThemeCount=selected.length;
+    resultThemes.textContent=`선택된 테마: ${names.join(' · ')}  ·  약 ${estimateLineCount(code).toLocaleString()}줄 / ${formatBytes(new Blob([code]).size)}`;
+    resultBox.classList.add('show');
+    previewWrap.classList.remove('show');
+    status.textContent='완성됐어요! 이제 체크한 테마 코드만 들어간 가벼운 유저스크립트를 복사할 수 있어요.';
+    resultBox.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }catch(err){
+    console.error(err);
+    status.textContent='생성 중 오류가 났어요. 새로고침 후 다시 시도해 주세요.';
+    invalidateResult();
+  }
+}
+async function copyGenerated(){
+  if(!generatedCode.value||generatedFor!==selectionKey()){
+    status.textContent='선택이 바뀌었어요. 다시 유저스크립트를 만들어 주세요.';
+    invalidateResult();
+    return;
+  }
+  const value=generatedCode.value;
+  try{
+    if(!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
+    await navigator.clipboard.writeText(value);
+    status.textContent=`유저스크립트가 복사됐어요 ♡ (${generatedThemeCount}개 테마만 포함)`;
+  }catch(e){
+    generatedCode.focus();
+    generatedCode.select();
+    let ok=false;
+    try{ok=document.execCommand('copy')}catch(_){}
+    status.textContent=ok
+      ? `유저스크립트가 복사됐어요 ♡ (${generatedThemeCount}개 테마만 포함)`
+      : '코드를 선택해뒀어요. 직접 복사해 주세요.';
+    previewWrap.classList.add('show');
+  }
+}
+checks.forEach(c=>c.addEventListener('change',refreshSelection));
+document.getElementById('select-all').addEventListener('click',()=>{checks.forEach(c=>c.checked=true);refreshSelection()});
+document.getElementById('clear-all').addEventListener('click',()=>{checks.forEach(c=>c.checked=false);refreshSelection()});
+generateBtn.addEventListener('click',buildUserscript);
+document.getElementById('copy-generated').addEventListener('click',copyGenerated);
+document.getElementById('toggle-code').addEventListener('click',()=>previewWrap.classList.toggle('show'));
+try{
+  const saved=JSON.parse(localStorage.getItem(STORAGE_KEY));
+  if(Array.isArray(saved)&&saved.every(v=>Number.isInteger(v)&&v>=0&&v<themeNames.length)){
+    checks.forEach(c=>c.checked=saved.includes(Number(c.dataset.themeIndex)));
+  }else{
+    checks.forEach(c=>c.checked=false);
+  }
+}catch(e){
+  checks.forEach(c=>c.checked=false)
+}
+refreshSelection();
 </script></body></html>
